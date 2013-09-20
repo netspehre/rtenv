@@ -5,6 +5,8 @@
 
 #include <stddef.h>
 
+void MyShell();
+
 void *memcpy(void *dest, const void *src, size_t n);
 
 int strcmp(const char *a, const char *b) __attribute__ ((naked));
@@ -253,16 +255,15 @@ void greeting()
 	}
 }
 
-void echo()
+void echo(char *P)
 {
-	int fdout, fdin;
-	char c;
+	int fdout;
+	int I;
 	fdout = open("/dev/tty0/out", 0);
-	fdin = open("/dev/tty0/in", 0);
-
-	while (1) {
-		read(fdin, &c, 1);
-		write(fdout, &c, 1);
+	write(fdout, "\r\n", 2);
+	for (I = 5; P[I] != '\n';I++)
+	{
+		write(fdout, P+I, 1);
 	}
 }
 
@@ -358,7 +359,7 @@ void serial_readwrite_task()
 	}
 }
 
-void first()
+void first()  
 {
 	setpriority(0, 0);
 
@@ -366,9 +367,10 @@ void first()
 	if (!fork()) setpriority(0, 0), serialout(USART2, USART2_IRQn);
 	if (!fork()) setpriority(0, 0), serialin(USART2, USART2_IRQn);
 	if (!fork()) rs232_xmit_msg_task();
-	if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), queue_str_task1();
-	if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), queue_str_task2();
-	if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), serial_readwrite_task();
+        if (!fork())  setpriority(0,  PRIORITY_DEFAULT - 10 ), MyShell();
+	//if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), queue_str_task1();
+	//if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), queue_str_task2();
+	//if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), serial_readwrite_task();
 
 	setpriority(0, PRIORITY_LIMIT);
 
@@ -666,6 +668,149 @@ _mknod(struct pipe_ringbuffer *pipe, int dev)
 	return 0;
 }
 
+char *Myitoa(int num,char *str,int radix)
+{    
+    char index[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    unsigned unum; 
+    int i=0,j,k;
+    if(radix==10&&num<0) 
+    {
+    unum=(unsigned)-num;
+    str[i++]='-';
+    }
+    else unum=(unsigned)num; 
+    do{
+        str[i++]=index[unum%(unsigned)radix];
+        unum/=radix;
+    }while(unum);
+    str[i]='\0';
+    if(str[0]=='-') k=1; 
+    else k=0;
+    char temp;
+    for(j=k;j<=(i-k-1)/2;j++)
+    {
+        temp=str[j];
+        str[j] = str[i-1+k-j];
+        str[i-j-1]=temp;
+    }
+    return str;
+}
+
+void MyShell()
+{
+	int fdout, fdin;
+	char str[100];
+	char ch;
+        char Temp[2]="\0\0";
+	int curr_char;
+	int done;
+	int I,T=0;
+	int PsTable[9][3];
+	char OutputBuff[128];
+	fdout = mq_open("/tmp/mqueue/out", 0);
+	fdin = open("/dev/tty0/in", 0);
+		
+
+	/* Prepare the response message to be queued. */
+	//memcpy(str, "Got:", 4);
+	
+	while (1) {
+		write(fdout, "\r\nMyShell>>", 12);
+		curr_char = 0;
+		done = 0;
+		do {
+			/* Receive a byte from the RS232 port (this call will
+			 * block). */
+			read(fdin, &ch, 1);
+
+			/* If the byte is an end-of-line type character, then
+			 * finish the string and inidcate we are done.
+			 */
+			if (curr_char >= 98 || (ch == '\r') || (ch == '\n')) {
+				str[curr_char] = '\n';
+				str[curr_char+1] = '\0';
+				done = -1;
+				/* Otherwise, add the character to the
+				 * response string. */
+			}
+			else {
+				str[curr_char++] = ch;
+				Temp[0]=ch;
+				write(fdout, Temp, 2);
+			}
+		} while (!done);
+
+		if (0==strcmp("hello\n\0",str))
+		{
+			write(fdout, "\r\nHi, Nice to meet you.",30);
+			
+		}
+		else if (0==strncmp("echo\n\0",str,4))
+		{
+			echo(str);
+			//write(fdout, "2",1);
+		}
+		else if (0==strcmp("ps\n\0",str))
+		{
+			
+			psinfo(PsTable,&T);
+			write(fdout,"\r\nThere are ",13);
+			write(fdout, Myitoa(T,OutputBuff,10) ,2);
+			write(fdout," task(s)",9);
+			write(fdout,"\r\nPID   Status          Priority",59);
+
+			for (I=0;I<T;I++)
+			{
+				write(fdout,"\r\n",3);
+				write(fdout,Myitoa(PsTable[I][0],OutputBuff,10),2);
+				write(fdout,"     ",6);
+				if (PsTable[I][1] == 0)
+				{
+					write(fdout,"TASK_READY      ",32);
+				}
+				else if (PsTable[I][1] == 1)
+				{
+					write(fdout,"TASK_WAIT_READ  ",32);
+				}
+				else if (PsTable[I][1] == 2)
+				{
+					write(fdout,"TASK_WAIT_WRITE ",32);
+				}
+				else if (PsTable[I][1] == 3)
+				{
+					write(fdout,"TASK_WAIT_INTR  ",32);
+				}
+				else if (PsTable[I][1] == 4)
+				{
+					write(fdout,"TASK_WAIT_TIME  ",32);
+				}
+				write(fdout,"     ",6);		
+				write(fdout,Myitoa(PsTable[I][2],OutputBuff,10),2);
+				
+			}
+
+		}
+		else if (0==strcmp("help\n\0",str))
+		{
+			write(fdout, "\r\nThis is a very simple shell.",32);
+			write(fdout, "\r\nThere are only 4 commands.",32);
+			write(fdout, "\r\nhello - shows a welcome message.",50);
+			write(fdout, "\r\necho  - shows a message you type after \'echo\' command.",59);
+			write(fdout, "\r\nps    - shows all running tasks.",59);
+			write(fdout, "\r\nhelp  - the place where you are",59);			
+		}
+		else
+		{
+			write(fdout, "\r\ncommand not supported",30);
+			write(fdout, "\r\nType \"help\" to see further info.",35);
+		}
+		/* Once we are done building the response string, queue the
+		 * response to be sent to the RS232 port.
+		 */
+		//write(fdout, str, curr_char+1+1);
+	}
+}
+
 int main()
 {
 	unsigned int stacks[TASK_LIMIT][STACK_SIZE];
@@ -679,7 +824,8 @@ int main()
 	struct task_control_block *task;
 	int timeup;
 	unsigned int tick_count = 0;
-
+	int (*PT)[3];
+	unsigned int *PT1;
 	SysTick_Config(configCPU_CLOCK_HZ / configTICK_RATE_HZ);
 
 	init_rs232();
@@ -788,6 +934,17 @@ int main()
 			if (tasks[current_task].stack->r0 != 0) {
 				tasks[current_task].stack->r0 += tick_count;
 				tasks[current_task].status = TASK_WAIT_TIME;
+			}
+			break;
+		case 0xa: /* psinfo */
+			PT1=tasks[current_task].stack->r1;
+			PT=tasks[current_task].stack->r0;
+			*PT1=task_count-1;
+			for (i=0;i<task_count;i++)
+			{
+				PT[i][0]=tasks[i].pid;
+				PT[i][1]=tasks[i].status;
+				PT[i][2]=tasks[i].priority;
 			}
 			break;
 		default: /* Catch all interrupts */
