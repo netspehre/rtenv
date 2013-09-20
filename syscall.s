@@ -75,3 +75,11 @@ sleep:
 	nop
 	pop {r7}
 	bx lr
+.global psinfo
+psinfo:
+	push {r7}
+	mov r7, #0xa
+	svc 0
+	nop
+	pop {r7}
+	bx lr
