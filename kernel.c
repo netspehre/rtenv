@@ -10,6 +10,9 @@ void MyShell();
 void *memcpy(void *dest, const void *src, size_t n);
 
 int strcmp(const char *a, const char *b) __attribute__ ((naked));
+
+char *Myitoa(int num,char *str,int radix);
+
 int strcmp(const char *a, const char *b)
 {
 	asm(
@@ -295,11 +298,11 @@ void queue_str_task(const char *str, int delay)
 {
 	int fdout = mq_open("/tmp/mqueue/out", 0);
 	int msg_len = strlen(str) + 1;
-
+	char Buf[16];
 	while (1) {
 		/* Post the message.  Keep on trying until it is successful. */
 		write(fdout, str, msg_len);
-
+		write(fdout, Myitoa(getpid(),Buf,10), msg_len);
 		/* Wait. */
 		sleep(delay);
 	}
@@ -307,12 +310,12 @@ void queue_str_task(const char *str, int delay)
 
 void queue_str_task1()
 {
-	queue_str_task("Hello 1\n", 200);
+	queue_str_task("\r\nHello PID=", 1000);
 }
 
 void queue_str_task2()
 {
-	queue_str_task("Hello 2\n", 50);
+	queue_str_task("\r\nHello 2", 50);
 }
 
 void serial_readwrite_task()
@@ -696,6 +699,11 @@ char *Myitoa(int num,char *str,int radix)
     return str;
 }
 
+void MyProg()
+{
+	sleep(1000);
+}
+
 void MyShell()
 {
 	int fdout, fdin;
@@ -709,10 +717,6 @@ void MyShell()
 	char OutputBuff[128];
 	fdout = mq_open("/tmp/mqueue/out", 0);
 	fdin = open("/dev/tty0/in", 0);
-		
-
-	/* Prepare the response message to be queued. */
-	//memcpy(str, "Got:", 4);
 	
 	while (1) {
 		write(fdout, "\r\nMyShell>>", 12);
@@ -733,6 +737,16 @@ void MyShell()
 				/* Otherwise, add the character to the
 				 * response string. */
 			}
+			else if (ch == 127)
+			{
+				if (curr_char>0)
+				{
+					write(fdout,"\b", 2);
+					write(fdout," ", 2);
+					write(fdout,"\b", 2);
+					curr_char--;
+				}
+			}
 			else {
 				str[curr_char++] = ch;
 				Temp[0]=ch;
@@ -748,7 +762,6 @@ void MyShell()
 		else if (0==strncmp("echo\n\0",str,4))
 		{
 			echo(str);
-			//write(fdout, "2",1);
 		}
 		else if (0==strcmp("ps\n\0",str))
 		{
@@ -785,29 +798,30 @@ void MyShell()
 					write(fdout,"TASK_WAIT_TIME  ",32);
 				}
 				write(fdout,"     ",6);		
-				write(fdout,Myitoa(PsTable[I][2],OutputBuff,10),2);
-				
+				write(fdout,Myitoa(PsTable[I][2],OutputBuff,10),2);		
 			}
 
 		}
 		else if (0==strcmp("help\n\0",str))
 		{
 			write(fdout, "\r\nThis is a very simple shell.",32);
-			write(fdout, "\r\nThere are only 4 commands.",32);
+			write(fdout, "\r\nThere are only 5 commands.",32);
 			write(fdout, "\r\nhello - shows a welcome message.",50);
 			write(fdout, "\r\necho  - shows a message you type after \'echo\' command.",59);
 			write(fdout, "\r\nps    - shows all running tasks.",59);
+			write(fdout, "\r\nexe   - add a task doing nothing but sleeping for the ",59);
+			write(fdout, "purpose of demostrating.",32);
 			write(fdout, "\r\nhelp  - the place where you are",59);			
+		}
+		else if (0==strcmp("exe\n\0",str))
+		{
+			if (!fork())setpriority(0,  PRIORITY_DEFAULT - 20 ),MyProg();
 		}
 		else
 		{
 			write(fdout, "\r\ncommand not supported",30);
 			write(fdout, "\r\nType \"help\" to see further info.",35);
 		}
-		/* Once we are done building the response string, queue the
-		 * response to be sent to the RS232 port.
-		 */
-		//write(fdout, str, curr_char+1+1);
 	}
 }
 
