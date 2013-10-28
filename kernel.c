@@ -1,3 +1,4 @@
+
 #include "stm32f10x.h"
 #include "RTOSConfig.h"
 
@@ -208,6 +209,8 @@ int mq_open(const char *name, int oflag)
 	return open(name, 0);
 }
 
+char MyLock1=0;
+
 void serialout(USART_TypeDef* uart, unsigned int intr)
 {
 	int fd;
@@ -217,15 +220,17 @@ void serialout(USART_TypeDef* uart, unsigned int intr)
 	fd = open("/dev/tty0/out", 0);
 
 	while (1) {
+		while (MyLock1)interrupt_wait(intr); 
 		if (doread)
 			read(fd, &c, 1);
 		doread = 0;
 		if (USART_GetFlagStatus(uart, USART_FLAG_TXE) == SET) {
 			USART_SendData(uart, c);
-			USART_ITConfig(USART2, USART_IT_TXE, ENABLE);
+			USART_ITConfig(USART2, USART_IT_TXE, ENABLE);  //NVIC_DisableIRQ(intr);
 			doread = 1;
+			MyLock1=1;
 		}
-		interrupt_wait(intr);
+		interrupt_wait(intr);  // NVIC_EnableIRQ(intr);
 		USART_ITConfig(USART2, USART_IT_TXE, DISABLE);
 	}
 }
@@ -236,11 +241,10 @@ void serialin(USART_TypeDef* uart, unsigned int intr)
 	char c;
 	mkfifo("/dev/tty0/in", 0);
 	fd = open("/dev/tty0/in", 0);
-
-    USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
+	USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
 
 	while (1) {
-		interrupt_wait(intr);
+		interrupt_wait(intr);   //this system suspends the task. Interrupts make the task back to the ready status.
 		if (USART_GetFlagStatus(uart, USART_FLAG_RXNE) == SET) {
 			c = USART_ReceiveData(uart);
 			write(fd, &c, 1);
