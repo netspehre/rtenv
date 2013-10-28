@@ -16,6 +16,10 @@ USART2_IRQHandler:
 	/* save user state */
 	stmdb r0!, {r4, r5, r6, r7, r8, r9, r10, r11, lr}
 
+	ldr r4,=MyLock1
+	mov r5,#0
+	str r5,[r4]
+
 	/* load kernel state */
 	pop {r4, r5, r6, r7, r8, r9, r10, r11, ip, lr}
 	msr psr, ip
